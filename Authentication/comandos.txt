@@ -1,0 +1,6 @@
+entre no diretorio da api, consonle cd caminho da pasta da api
+
+para ligar a api ,utilize comando
+uvicorn api:app --reload
+
+
