@@ -121,9 +121,9 @@ async def send_alert_request(nome_pessoa):
         if response.status_code == 200:
             print("Requisição enviada com sucesso para http://192.168.0.9/")
         else:
-            print(f"Erro na requisição:")
+            print(f"Erro na requisição para o ESP32")
     except Exception as e:
-        print(f"Erro ao enviar requisição")
+        print(f"Erro ao enviar requisição para o ESP32")
         
 
 
