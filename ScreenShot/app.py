@@ -1,10 +1,6 @@
 import asyncio
 from datetime import datetime
-import os
-import tempfile
-import uuid
-import face_recognition
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File,  WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 import cv2
 import numpy as np
@@ -17,7 +13,7 @@ from upload_bucket import upload_pdf_to_firebase
 from face_recognition_module import carregar_base_dados, reconhecer_face
 from pdf_report import create_pdf_report
 import firebase_admin
-from firebase_admin import credentials, storage
+from firebase_admin import credentials
 import requests
 
 
@@ -36,10 +32,7 @@ clients = []
 model = YOLO("../YOLO-Weights/ppe.pt")
 model_person = YOLO("../YOLO-Weights/yolov8n.pt")
 classNames = ['Capacete', 'Mascara', 'SEM-Capacete', 'SEM-Mascara', 'SEM-Colete', 'Pessoa', 'Colete']
-
-# Carregar a base de dados de rostos
-diretorio_base = 'faces'
-base_dados = carregar_base_dados(diretorio_base)
+base_dados = carregar_base_dados()
 
 
 def draw_box(img, box, class_name, conf, color):
@@ -55,29 +48,19 @@ async def send_message_to_clients(message, prefix):
         except WebSocketDisconnect:
             clients.remove(client)
 
+
 async def analyze_image(img, websocket=None):
     all_ok = True
 
-    # Converter imagem para formato que o face_recognition pode usar
     temp_image = cv2.imencode('.jpg', img)[1].tobytes()
     temp_buffer = BytesIO(temp_image)
 
-    # Reconhecimento facial
     nome_pessoa = "Pessoa desconhecida"
     try:
-        face_image = face_recognition.load_image_file(temp_buffer)
-        encodings_faces = face_recognition.face_encodings(face_image, face_recognition.face_locations(face_image))
-        
-        for face_encoding in encodings_faces:
-            distancias = face_recognition.face_distance(list(base_dados.values()), face_encoding)
-            if len(distancias) > 0:
-                indice_melhor = distancias.argmin()
-                if distancias[indice_melhor] < 0.6:
-                    nome_pessoa = list(base_dados.keys())[indice_melhor]
+        nome_pessoa = reconhecer_face(temp_buffer, base_dados)
     except Exception as e:
         print(f"Erro no reconhecimento facial: {e}")
     
-    # Análise YOLO (substitua model e classNames de acordo com seu código)
     results = model(img, stream=True)
     
     for r in results:
@@ -91,21 +74,17 @@ async def analyze_image(img, websocket=None):
                 if "SEM" in class_name:
                     all_ok = False
 
-    # Enviar imagem analisada para todos os clientes WebSocket
     _, buffer = cv2.imencode('.jpg', img)
     encoded_image = base64.b64encode(buffer).decode('utf-8')
     await send_message_to_clients(encoded_image, "img")
 
-    # Enviar mensagem de status e iniciar requisição assíncrona se itens estiverem em falta
     if all_ok:
         await send_message_to_clients(f"Todos os itens de segurança presentes para {nome_pessoa}.", "sec")
     else:
         await send_message_to_clients(f"Imagem com itens de segurança em falta para {nome_pessoa}.", "sec")
         
-        # Tentar enviar requisição de forma assíncrona com timeout
         asyncio.create_task(send_alert_request(nome_pessoa))
 
-    # Criar PDF diretamente da imagem em memória
     pdf_byte_string, pdf_filename = create_pdf_report(nome_pessoa, all_ok, img)
     
     public_url = upload_pdf_to_firebase(pdf_byte_string, pdf_filename)
@@ -173,9 +152,9 @@ def generate_frames():
 
             ret, buffer = cv2.imencode('.jpg', img)
             yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-    except GeneratorExit:  # This handles the streaming cancellation (like a client disconnecting)
+    except GeneratorExit:  
         print("Stream was closed")
-    except Exception as e:  # Any other exceptions
+    except Exception as e:  
         print(f"Error in streaming: {e}")
     finally:
         cap.release()
@@ -187,7 +166,6 @@ async def websocket_endpoint(websocket: WebSocket):
     clients.append(websocket)
     try:
         while True:
-            # Aguardar mensagens do cliente (se necessário)
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         clients.remove(websocket)

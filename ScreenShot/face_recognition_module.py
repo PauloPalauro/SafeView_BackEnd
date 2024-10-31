@@ -1,20 +1,37 @@
 import os
 import face_recognition
+from firebase_admin import storage
+import os
+import face_recognition
+from io import BytesIO
+from PIL import Image
 
 
-def carregar_base_dados(diretorio_base):
+def carregar_base_dados():
     """
-    Carrega as imagens de rostos de um diretório e retorna um dicionário
+    Carrega as imagens de rostos de uma pasta no Firebase Storage e retorna um dicionário
     com o nome dos arquivos como chave e os encodings dos rostos como valor.
     """
+    bucket = storage.bucket()
     base_dados = {}
-    for arquivo in os.listdir(diretorio_base):
-        if arquivo.endswith(('.jpg', '.jpeg', '.png')):
-            caminho_arquivo = os.path.join(diretorio_base, arquivo)
-            imagem = face_recognition.load_image_file(caminho_arquivo)
-            encodings = face_recognition.face_encodings(imagem)
+
+    # Listar todos os arquivos na pasta do Firebase Storage
+    blobs = bucket.list_blobs(prefix="Faces/")  # Ajuste o prefixo conforme necessário
+
+    for blob in blobs:
+        if blob.name.endswith(('.jpg', '.jpeg', '.png')):
+            # Baixar a imagem em memória
+            imagem_bytes = blob.download_as_bytes()
+            imagem = Image.open(BytesIO(imagem_bytes))
+            imagem_rgb = imagem.convert("RGB")  # Converter para RGB se for PNG
+
+            # Processar a imagem e obter encodings
+            imagem_array = face_recognition.load_image_file(BytesIO(imagem_bytes))
+            encodings = face_recognition.face_encodings(imagem_array)
+            
             if encodings:  # Verifica se há algum rosto detectado
-                base_dados[os.path.splitext(arquivo)[0]] = encodings[0]
+                base_dados[os.path.splitext(os.path.basename(blob.name))[0]] = encodings[0]
+
     return base_dados
 
 
