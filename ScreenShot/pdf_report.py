@@ -29,15 +29,15 @@ class PDF(FPDF):
 def create_pdf_report(nome_pessoa, all_ok, img):
     # Obter a data e hora atual e formatar para o nome do arquivo
     now = datetime.now()
-    data_hora = now.strftime("%d/%m/%Y%H:%M_%S")
-    data_hora_nome = now.strftime("%d-%m-%y%H_%M")
+    data_hora = now.strftime("%d-%m-%Y_%Hh%M") 
+    data_hora_pdf = now.strftime("%d/%m/%Y %H:%M")
 
     # Gerar um ID aleatório para o relatório
-    report_id = uuid.uuid4().int >> 64
+    report_id = uuid.uuid4().int >> 100
     report_id_str = str(report_id)
 
     # Nome do arquivo PDF com ID, nome e data
-    pdf_filename = f"{report_id_str}-{nome_pessoa}-{data_hora_nome}.pdf"
+    pdf_filename = f"{report_id_str}_{nome_pessoa}_{data_hora}.pdf"
 
     # Gerar o PDF
     pdf = PDF()
@@ -69,10 +69,10 @@ def create_pdf_report(nome_pessoa, all_ok, img):
 
     # Detalhes do relatório
     pdf.set_font("Arial", size=12)
-    pdf.ln(10)
+    pdf.ln(18)
     pdf.cell(0, 10, f"Nome: {nome_pessoa}", ln=True)
     pdf.cell(0, 10, f"Status de Segurança: {'OK' if all_ok else 'Faltando itens de segurança'}", ln=True)
-    pdf.cell(0, 10, f"Data e Hora da Análise: {data_hora}", ln=True)
+    pdf.cell(0, 10, f"Data e Hora da Análise: {data_hora_pdf}", ln=True)
 
     # Salvar o PDF em memória
     byte_string = pdf.output(dest="S").encode('latin1')
