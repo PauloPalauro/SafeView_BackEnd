@@ -20,7 +20,7 @@ import requests
 app = FastAPI()
 
 def initialize_firebase():
-    cred = credentials.Certificate("../../credenciais.json")
+    cred = credentials.Certificate("../.env.json")
     firebase_admin.initialize_app(cred, {
         'storageBucket': 'safeviewbd.appspot.com'  
 })
