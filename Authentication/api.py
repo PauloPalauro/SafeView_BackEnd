@@ -20,7 +20,7 @@ async def todos_usuarios():
         usuario = doc.to_dict()
         print(usuario)  
         usuarios.append(usuario)
-    
+
     return {'usuarios': usuarios}
 
 @app.post('/registra_usuario_padrao')
@@ -35,6 +35,7 @@ async def registra_usuario(request: Request):
         nome = info.get('nome')
         senha = info.get('senha')
         senha = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+        cargo = 'usuario'
 
         if not email or not nome or not senha:
             logger.error("Email,nome ou senha não fornecidos.")
@@ -54,7 +55,7 @@ async def registra_usuario(request: Request):
         new_user_ref.set({
             'Email': email,
             'Nome': nome,
-            'Admin': False,
+            'Cargo': cargo,
             'Senha': senha.decode('utf-8')
         })
         logger.info(f"Usuário {nome} cadastrado com sucesso com ID {new_user_ref.id}")
