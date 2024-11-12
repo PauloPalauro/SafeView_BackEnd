@@ -69,6 +69,33 @@ async def registra_usuario(request: Request):
         logger.error(f"Ocorreu um erro ao registrar o usuário: {e}")
         return JSONResponse({'mensagem': 'Ocorreu um erro ao registrar o usuário', 'erro': str(e)}, status_code=500)
 
+@app.get('/usuario/{email}')
+async def usuario_por_email(email: str):
+    try:
+        logger.info(f"Procurando usuário com email {email}...")
+        users_ref = db.collection('usuarios')
+        docs = users_ref.where('Email', '==', email).stream()
+        
+        usuario = None
+        for doc in docs:
+            usuario = doc.to_dict()
+            break
+        
+        if usuario is None:
+            logger.error(f"Usuário com email {email} não encontrado.")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+        
+        logger.info(f"Usuário com email {email} encontrado: {usuario}")
+        return JSONResponse({'usuario': usuario}, status_code=200)
+    
+    except HTTPException as http_exc:
+        logger.error(f"Erro HTTP: {http_exc.detail}")
+        return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
+    
+    except Exception as e:
+        logger.error(f"Ocorreu um erro ao buscar o usuário: {e}")
+        return JSONResponse({'mensagem': 'Ocorreu um erro ao buscar o usuário', 'erro': str(e)}, status_code=500)
+
 @app.post('/login')
 async def verifica_usuario(request: Request):
     try:
