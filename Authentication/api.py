@@ -4,7 +4,10 @@ from fastapi.responses import JSONResponse
 import requests
 import logging
 import bcrypt
-
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import os
+import smtplib
 
 app = FastAPI()
 
@@ -140,3 +143,101 @@ async def verifica_usuario(request: Request):
     except Exception as e:
         logger.error(f"Ocorreu um erro ao verificar o usuário: {e}")
         return JSONResponse({'mensagem': 'Ocorreu um erro ao verificar o usuário', 'erro': str(e)}, status_code=500)
+
+# @app.post('/recupera_senha')
+# async def recupera_senha(request: Request):
+#     try:
+#         logger.info("Recebendo requisição para recuperação de senha...")
+#         info = await request.json()
+#         email = info.get('email')
+
+#         if not email:
+#             logger.error("Email não fornecido.")
+#             raise HTTPException(status_code=400, detail="Email é obrigatório.")
+
+#         users_ref = db.collection('usuarios')
+#         docs = users_ref.where('Email', '==', email).stream()
+        
+#         usuario = None
+#         for doc in docs:
+#             usuario = doc.to_dict()
+#             break
+
+#         if usuario is None:
+#             logger.error(f"Usuário com email {email} não encontrado.")
+#             raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+        
+#         nova_senha = "nova_senha_aleatoria"  
+#         users_ref.document(doc.id).update({'Senha': bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')})
+
+#         # Configura a mensagem de email
+#         mensagem = MIMEMultipart()
+#         mensagem['From'] = EMAIL_SENDER
+#         mensagem['To'] = email
+#         mensagem['Subject'] = 'Recuperação de Senha'
+#         corpo_email = f"Olá {usuario['Nome']},\n\nSua nova senha temporária é: {nova_senha}\n\nPor favor, altere sua senha ao fazer login."
+#         mensagem.attach(MIMEText(corpo_email, 'plain'))
+
+#         # Envia o email
+#         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+#             server.starttls()
+#             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+#             server.sendmail(EMAIL_SENDER, email, mensagem.as_string())
+
+#         logger.info(f"Email de recuperação de senha enviado para {email}.")
+#         return JSONResponse({'mensagem': 'Email de recuperação de senha enviado com sucesso.'}, status_code=200)
+    
+#     except HTTPException as http_exc:
+#         logger.error(f"Erro HTTP: {http_exc.detail}")
+#         return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
+    
+#     except Exception as e:
+#         logger.error(f"Ocorreu um erro ao enviar o email de recuperação de senha: {e}")
+#         return JSONResponse({'mensagem': 'Ocorreu um erro ao enviar o email de recuperação de senha', 'erro': str(e)}, status_code=500)
+
+@app.delete('/apagar_usuario/{email_usuario_apagando}/{email_usuario_a_apagar}')
+async def apagar_usuario(email_usuario_apagando: str, email_usuario_a_apagar: str):
+    try:
+        logger.info(f"Usuário {email_usuario_apagando} está tentando apagar o usuário {email_usuario_a_apagar}...")
+
+        users_ref = db.collection('usuarios')
+        
+        logger.info(f"Verificando se o usuário com email {email_usuario_apagando} é admin...")
+        docs = users_ref.where('Email', '==', email_usuario_apagando).stream()
+        usuario_apagando = None
+        for doc in docs:
+            usuario_apagando = doc.to_dict()
+            usuario_apagando['id'] = doc.id
+            break
+        
+        if not usuario_apagando or usuario_apagando.get('Cargo') != 'admin':
+            logger.error(f"Usuário {email_usuario_apagando} não é um admin.")
+            raise HTTPException(status_code=403, detail="Você não tem permissão para apagar usuários.")
+        
+        logger.info(f"Verificando se o usuário com email {email_usuario_a_apagar} existe...")
+        docs = users_ref.where('Email', '==', email_usuario_a_apagar).stream()
+        usuario_a_apagar = None
+        for doc in docs:
+            usuario_a_apagar = doc.to_dict()
+            usuario_a_apagar['id'] = doc.id
+            break
+
+        if not usuario_a_apagar:
+            logger.error(f"Usuário {email_usuario_a_apagar} não encontrado.")
+            raise HTTPException(status_code=404, detail="Usuário a ser apagado não encontrado.")
+        
+        # Apaga o usuário
+        logger.info(f"Apagando usuário com email {email_usuario_a_apagar}...")
+        users_ref.document(usuario_a_apagar['id']).delete()
+        
+        logger.info(f"Usuário {email_usuario_a_apagar} apagado com sucesso.")
+        return JSONResponse({'mensagem': f'Usuário {email_usuario_a_apagar} apagado com sucesso.'}, status_code=200)
+
+    except HTTPException as http_exc:
+        logger.error(f"Erro HTTP: {http_exc.detail}")
+        return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
+    
+    except Exception as e:
+        logger.error(f"Ocorreu um erro ao tentar apagar o usuário: {e}")
+        return JSONResponse({'mensagem': 'Ocorreu um erro ao tentar apagar o usuário', 'erro': str(e)}, status_code=500)
