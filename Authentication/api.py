@@ -11,7 +11,7 @@ import smtplib
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from pydantic import BaseModel, EmailStr
 from fastapi.responses import JSONResponse
-
+import random
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO)
@@ -160,8 +160,8 @@ conf = ConnectionConfig(
 )
 
 
-@app.post('/recupera_senha')
-async def recupera_senha(request: Request):
+@app.post('/enviar_codigo_recuperacao')
+async def enviar_codigo_recuperacao(request: Request):
     try:
         logger.info("Recebendo requisição para recuperação de senha...")
         info = await request.json()
@@ -183,35 +183,69 @@ async def recupera_senha(request: Request):
             logger.error(f"Usuário com email {email} não encontrado.")
             raise HTTPException(status_code=404, detail="Usuário não encontrado.")
         
-        nova_senha = "nova_senha_aleatoria"
-        users_ref.document(doc.id).update({'Senha': bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')})
+        # Gerar um código de recuperação
+        codigo_recuperacao = str(random.randint(100000, 999999))
+        users_ref.document(doc.id).update({'CodigoRecuperacao': codigo_recuperacao})
 
-        # Configura o conteúdo do e-mail
-        corpo_email = f"Olá {usuario['Nome']},\n\nSua nova senha temporária é: {nova_senha}\n\nPor favor, altere sua senha ao fazer login."
+        corpo_email = f"Olá {usuario['Nome']},\n\nSeu código de recuperação de senha é: {codigo_recuperacao}\n\nUtilize este código para redefinir sua senha."
 
-        # Cria a mensagem de e-mail
         mensagem = MessageSchema(
-            subject="Recuperação de Senha",
-            recipients=[email],  # Lista de destinatários
+            subject="Código de Recuperação de Senha",
+            recipients=[email],
             body=corpo_email,
             subtype="plain"
         )
 
-        # Envia o e-mail usando FastMail
         fast_mail = FastMail(conf)
         await fast_mail.send_message(mensagem)
 
-        logger.info(f"Email de recuperação de senha enviado para {email}.")
-        return JSONResponse({'mensagem': 'Email de recuperação de senha enviado com sucesso.'}, status_code=200)
-    
-    except HTTPException as http_exc:
-        logger.error(f"Erro HTTP: {http_exc.detail}")
-        return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
+        logger.info(f"Código de recuperação enviado para {email}.")
+        return JSONResponse({'mensagem': 'Código de recuperação enviado com sucesso.'}, status_code=200)
     
     except Exception as e:
-        logger.error(f"Ocorreu um erro ao enviar o email de recuperação de senha: {e}")
-        return JSONResponse({'mensagem': 'Ocorreu um erro ao enviar o email de recuperação de senha', 'erro': str(e)}, status_code=500)
+        logger.error(f"Ocorreu um erro ao enviar o código de recuperação: {e}")
+        return JSONResponse({'mensagem': 'Erro ao enviar o código de recuperação', 'erro': str(e)}, status_code=500)
     
+
+@app.post('/validar_codigo_recuperacao')
+async def validar_codigo_recuperacao(request: Request):
+    try:
+        info = await request.json()
+        email = info.get('email')
+        codigo = info.get('codigo')
+        nova_senha = info.get('senha')
+
+        if not email or not codigo or not nova_senha:
+            logger.error("Dados incompletos.")
+            raise HTTPException(status_code=400, detail="Email, código e nova senha são obrigatórios.")
+
+        users_ref = db.collection('usuarios')
+        docs = users_ref.where('Email', '==', email).stream()
+        
+        usuario = None
+        for doc in docs:
+            usuario = doc.to_dict()
+            usuario['id'] = doc.id
+            break
+
+        if usuario is None or usuario.get('CodigoRecuperacao') != codigo:
+            logger.error("Código de recuperação inválido ou expirado.")
+            raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+
+        # Atualizar a senha e remover o código de recuperação
+        nova_senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        users_ref.document(usuario['id']).update({
+            'Senha': nova_senha_hash,
+            'CodigoRecuperacao': None
+        })
+
+        logger.info(f"Senha atualizada com sucesso para o usuário {email}.")
+        return JSONResponse({'mensagem': 'Senha atualizada com sucesso.'}, status_code=200)
+    
+    except Exception as e:
+        logger.error(f"Ocorreu um erro ao validar o código de recuperação: {e}")
+        return JSONResponse({'mensagem': 'Erro ao validar o código de recuperação', 'erro': str(e)}, status_code=500)
+
 @app.delete('/apagar_usuario/{email_usuario_apagando}/{email_usuario_a_apagar}')
 async def apagar_usuario(email_usuario_apagando: str, email_usuario_a_apagar: str):
     try:
