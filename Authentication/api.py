@@ -8,6 +8,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import smtplib
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from pydantic import BaseModel, EmailStr
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -106,17 +109,17 @@ async def verifica_usuario(request: Request):
         info = await request.json()
         logger.info(f"Dados recebidos: {info}")  
 
-        nome = info.get('nome')
+        email = info.get('email')
         senha = info.get('senha')
 
-        if not nome or not senha:
-            logger.error("nome ou senha não fornecidos.")
-            raise HTTPException(status_code=400, detail="nome e senha são obrigatórios.")
+        if not email or not senha:
+            logger.error("email ou senha não fornecidos.")
+            raise HTTPException(status_code=400, detail="email e senha são obrigatórios.")
 
         users_ref = db.collection('usuarios')
         
-        logger.info(f"Verificando se o usuário com nome {nome} existe...")
-        docs = users_ref.where('Nome', '==', nome).stream()
+        logger.info(f"Verificando se o usuário com email {email} existe...")
+        docs = users_ref.where('Email', '==', email).stream()
         user_found = False
         stored_password = None
         for doc in docs:
@@ -126,14 +129,14 @@ async def verifica_usuario(request: Request):
             break
         
         if not user_found:
-            logger.error(f"Usuário com nome {nome} não encontrado.")
+            logger.error(f"Usuário com email {email} não encontrado.")
             raise HTTPException(status_code=404, detail="Usuário não encontrado.")
         
         if not bcrypt.checkpw(senha.encode('utf-8'), stored_password.encode('utf-8')):
             logger.error("Senha incorreta.")
             raise HTTPException(status_code=401, detail="Senha incorreta.")
 
-        logger.info(f"Usuário com nome {nome} autenticado com sucesso.")
+        logger.info(f"Usuário com email {email} autenticado com sucesso.")
         return JSONResponse({'mensagem': 'Usuário autenticado com sucesso'}, status_code=200)
     
     except HTTPException as http_exc:
@@ -144,58 +147,71 @@ async def verifica_usuario(request: Request):
         logger.error(f"Ocorreu um erro ao verificar o usuário: {e}")
         return JSONResponse({'mensagem': 'Ocorreu um erro ao verificar o usuário', 'erro': str(e)}, status_code=500)
 
-# @app.post('/recupera_senha')
-# async def recupera_senha(request: Request):
-#     try:
-#         logger.info("Recebendo requisição para recuperação de senha...")
-#         info = await request.json()
-#         email = info.get('email')
+conf = ConnectionConfig(
+    MAIL_USERNAME="safeviewrecuperacaosenha@gmail.com",
+    MAIL_PASSWORD="zvfl wbhy cwfd ncos",  # Use a senha de app aqui
+    MAIL_FROM="safeviewrecuperacaosenha@gmail.com",
+    MAIL_PORT=587,
+    MAIL_SERVER="smtp.gmail.com",
+    MAIL_STARTTLS=True,
+    MAIL_SSL_TLS=False,
+    USE_CREDENTIALS=True,
+    VALIDATE_CERTS=True
+)
 
-#         if not email:
-#             logger.error("Email não fornecido.")
-#             raise HTTPException(status_code=400, detail="Email é obrigatório.")
 
-#         users_ref = db.collection('usuarios')
-#         docs = users_ref.where('Email', '==', email).stream()
+@app.post('/recupera_senha')
+async def recupera_senha(request: Request):
+    try:
+        logger.info("Recebendo requisição para recuperação de senha...")
+        info = await request.json()
+        email = info.get('email')
+
+        if not email:
+            logger.error("Email não fornecido.")
+            raise HTTPException(status_code=400, detail="Email é obrigatório.")
+
+        users_ref = db.collection('usuarios')
+        docs = users_ref.where('Email', '==', email).stream()
         
-#         usuario = None
-#         for doc in docs:
-#             usuario = doc.to_dict()
-#             break
+        usuario = None
+        for doc in docs:
+            usuario = doc.to_dict()
+            break
 
-#         if usuario is None:
-#             logger.error(f"Usuário com email {email} não encontrado.")
-#             raise HTTPException(status_code=404, detail="Usuário não encontrado.")
-
+        if usuario is None:
+            logger.error(f"Usuário com email {email} não encontrado.")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
         
-#         nova_senha = "nova_senha_aleatoria"  
-#         users_ref.document(doc.id).update({'Senha': bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')})
+        nova_senha = "nova_senha_aleatoria"
+        users_ref.document(doc.id).update({'Senha': bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')})
 
-#         # Configura a mensagem de email
-#         mensagem = MIMEMultipart()
-#         mensagem['From'] = EMAIL_SENDER
-#         mensagem['To'] = email
-#         mensagem['Subject'] = 'Recuperação de Senha'
-#         corpo_email = f"Olá {usuario['Nome']},\n\nSua nova senha temporária é: {nova_senha}\n\nPor favor, altere sua senha ao fazer login."
-#         mensagem.attach(MIMEText(corpo_email, 'plain'))
+        # Configura o conteúdo do e-mail
+        corpo_email = f"Olá {usuario['Nome']},\n\nSua nova senha temporária é: {nova_senha}\n\nPor favor, altere sua senha ao fazer login."
 
-#         # Envia o email
-#         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-#             server.starttls()
-#             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-#             server.sendmail(EMAIL_SENDER, email, mensagem.as_string())
+        # Cria a mensagem de e-mail
+        mensagem = MessageSchema(
+            subject="Recuperação de Senha",
+            recipients=[email],  # Lista de destinatários
+            body=corpo_email,
+            subtype="plain"
+        )
 
-#         logger.info(f"Email de recuperação de senha enviado para {email}.")
-#         return JSONResponse({'mensagem': 'Email de recuperação de senha enviado com sucesso.'}, status_code=200)
+        # Envia o e-mail usando FastMail
+        fast_mail = FastMail(conf)
+        await fast_mail.send_message(mensagem)
+
+        logger.info(f"Email de recuperação de senha enviado para {email}.")
+        return JSONResponse({'mensagem': 'Email de recuperação de senha enviado com sucesso.'}, status_code=200)
     
-#     except HTTPException as http_exc:
-#         logger.error(f"Erro HTTP: {http_exc.detail}")
-#         return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
+    except HTTPException as http_exc:
+        logger.error(f"Erro HTTP: {http_exc.detail}")
+        return JSONResponse({'detail': str(http_exc.detail)}, status_code=http_exc.status_code)
     
-#     except Exception as e:
-#         logger.error(f"Ocorreu um erro ao enviar o email de recuperação de senha: {e}")
-#         return JSONResponse({'mensagem': 'Ocorreu um erro ao enviar o email de recuperação de senha', 'erro': str(e)}, status_code=500)
-
+    except Exception as e:
+        logger.error(f"Ocorreu um erro ao enviar o email de recuperação de senha: {e}")
+        return JSONResponse({'mensagem': 'Ocorreu um erro ao enviar o email de recuperação de senha', 'erro': str(e)}, status_code=500)
+    
 @app.delete('/apagar_usuario/{email_usuario_apagando}/{email_usuario_a_apagar}')
 async def apagar_usuario(email_usuario_apagando: str, email_usuario_a_apagar: str):
     try:
