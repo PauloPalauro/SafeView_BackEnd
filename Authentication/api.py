@@ -210,10 +210,13 @@ async def enviar_codigo_recuperacao(request: Request):
 @app.post('/validar_codigo_recuperacao')
 async def validar_codigo_recuperacao(request: Request):
     try:
+        
         info = await request.json()
+        
         email = info.get('email')
         codigo = info.get('codigo')
-        nova_senha = info.get('senha')
+        nova_senha = info.get('nova_senha')
+        logger.info(f"Dados recebidos: email={email}, codigo={codigo}, nova_senha={nova_senha}")
 
         if not email or not codigo or not nova_senha:
             logger.error("Dados incompletos.")
@@ -263,7 +266,7 @@ async def apagar_usuario(email_usuario_apagando: str, email_usuario_a_apagar: st
         
         if not usuario_apagando or usuario_apagando.get('Cargo') != 'admin':
             logger.error(f"Usuário {email_usuario_apagando} não é um admin.")
-            raise HTTPException(status_code=403, detail="Você não tem permissão para apagar usuários.")
+            raise HTTPException(status_code=403, detail="Voce nao tem permissao para apagar usuarios.")
         
         logger.info(f"Verificando se o usuário com email {email_usuario_a_apagar} existe...")
         docs = users_ref.where('Email', '==', email_usuario_a_apagar).stream()
